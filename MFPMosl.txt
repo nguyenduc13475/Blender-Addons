@@ -1,0 +1,340 @@
+// Structure
+
+point convert(color Col){
+    return point(Col[0], Col[1], Col[2]);
+}
+
+int floor(float Num){
+    return int(floor(Num));
+}
+
+int round(float Num){
+    return int(round(Num));
+}
+
+float maprange(float Num, float FromMin, float FromMax, float ToMin, float ToMax){
+    return (ToMax - ToMin) / (FromMax - FromMin) * Num + 
+           (FromMax * ToMin - FromMin * ToMax) / (FromMax - FromMin);
+}
+
+// Global Function
+
+float Angle(point Vector1, point Vector2){
+    return acos(dot(normalize(Vector1), normalize(Vector2)));
+}
+
+point CrossF(point Tri[]){
+    return normalize(cross(Tri[0] - Tri[2], Tri[1] - Tri[2]));
+}
+
+point TwoCoord(float UInt, float UFloat, float VInt, float VFloat){
+    return point(UInt + UFloat / 255, VInt + VFloat / 255, 0);
+}
+
+point TriNor(color IntPart, color FLoatPart){
+    return (convert(IntPart) + convert(FLoatPart) / 255) * 2 - 1;
+}
+
+shader MultiParallax(
+    string HeightMap = "",
+    string AngleMap = "",
+    string VertexNormalMap = "",
+    string DiffuseMap = "",
+    string NormalMap = "",
+    string PBRMap = "",
+    float MAXSIZE = 10,
+    float Depth = 0.3,
+    float Strength = 1,
+    float Step = 0.01,
+    float ShadowStep = 0.01,
+    int Radius = 50,
+    int ShadowRadius = 30,
+    int Binary = 10,
+    point Incoming = point(0,0,0),
+    point TrueNormal = point(0,0,0),
+    point InitPosition = P,
+    point TruePosition = P,
+    point InitCenter = P,
+    point BoundMax = point(1,1,1),
+    point BoundMin = point(-1,-1,-1),
+    point UVMap = P,
+    point Light = point(4,4,4),
+    float Threshold = 0.2,
+    float MaxSearch = 2,
+    int Artifact = 1,
+    output point debug = 0,
+    output color Diffuse = 0,
+    output color Normal = 0,
+    output color PBR = 0,
+    output float Alpha = 1,
+    output float Shadow = 1
+){
+
+// Constant
+
+    float TotalWidth = 4096;
+    float TotalHeight = 5120;
+    float VNHeight = 3072;
+    float Look = dot(Incoming, TrueNormal);
+    point Dimensions = BoundMax - BoundMin;
+    point Block = Dimensions / 128;
+    point DeriU = transform("object", dPdu);
+    point DeriV = transform("object", dPdv);
+
+    int IMG1[2] = {1, 1024};
+    int IMG2[2] = {2049, 1024};
+    int IMG3[2] = {1, 2048};
+    int IMG4[2] = {2049, 2048};
+    int IMG5[2] = {1, 3072};
+    int IMG6[2] = {2049, 3072};
+    int IMG7[2] = {1, 4096};
+    int IMG8[2] = {2049, 4096};
+    int IMG9[2] = {1, 5120};
+    int IMG0[2] = {2049, 5120};
+
+    int IMG11[2] = {1, 1024};
+    int IMG12[2] = {2049, 1024};
+    int IMG13[2] = {1, 2048};
+    int IMG14[2] = {2049, 2048};
+    int IMG15[2] = {1, 3072};
+    int IMG16[2] = {2049, 3072};
+
+// Declare
+
+    int OX, OY, Condition = 0, PixelIndex = 0;
+    float CurHeight, CurDepth;
+    color VInt[3], VFloat[3], UVCol[4], VNorInt[3], VNorFloat[3];
+    point LocalIncoming, TriCoordIndex, CurUV, After, Below2D, CurNor, InitNor;
+    point TriV[3], OldTriV[3], UV[3], OldUV[3], VNor[3], OldVNor[3], BelowV[3], TrueTriV[3],
+          InitTriV[3];
+
+// Function
+
+	int IsOut(point Vec){
+        for (int i = 0; i <= 2; i++)
+            if (Vec[i] < BoundMin[i] || Vec[i] > BoundMax[i]) return 1;
+        return 0;
+    }
+
+    int IsOutBelow(){
+        if (Below2D[0] < 0 || Below2D[1] < 0 || Below2D[0] + Below2D[1] > 1)
+            return 1;
+        return 0;
+    }
+
+    int IsDifferent(){
+        return TriV[2] != OldTriV[2] || TriV[1] != OldTriV[1] || TriV[0] != OldTriV[0] ? 1 : 0;
+    }
+
+    point TriCoord(color IntPart, color FLoatPart){
+        return (convert(IntPart)*255 + convert(FLoatPart)) / (127.5 / MAXSIZE) - MAXSIZE;
+    }
+
+    color LookUp(int IMG[], int OX, int OY){
+        return texture(AngleMap, float(IMG[0] + OX)/TotalWidth - 0.00001, 
+               float(IMG[1] - OY)/TotalHeight - 0.00001, "interp", "closest");
+    }
+
+    color LookUpVN(int IMG[], int OX, int OY){
+        return texture(VertexNormalMap, float(IMG[0] + OX)/TotalWidth - 0.00001, 
+               float(IMG[1] - OY)/VNHeight - 0.00001, "interp", "closest");
+    }
+
+    point ChangeCoord(){
+        
+    }
+
+    point Parametric(point Direction, point DirU, point DirV){
+        point CurrentNor = cross(DirU, DirV);
+        point RotAxis = cross(CurrentNor, point(0,0,1));
+        float RotCoord = Angle(CurrentNor, point(0,0,1));
+
+        point NewDirection = rotate(Direction, RotCoord, point(0,0,0), RotAxis);
+        point NewDirU = rotate(DirU, RotCoord, point(0,0,0), RotAxis);
+        point NewDirV = rotate(DirV, RotCoord, point(0,0,0), RotAxis);
+
+        float DetM = NewDirU[0] * NewDirV[1] - NewDirU[1] * NewDirV[0];
+        return point(
+            (NewDirection[0] * NewDirV[1] - NewDirection[1] * NewDirV[0]) / DetM,
+            (NewDirection[1] * NewDirU[0] - NewDirection[0] * NewDirU[1]) / DetM,    
+            0       
+        );
+    }
+
+    point TexCoord(point BoundPnt){
+        PixelIndex = 0;
+        for (int i = 0; i <= 2; i++) PixelIndex += int(pow(128, i)) * (BoundPnt[i] >= 128 ? 127 : floor(BoundPnt[i]));
+        return point(mod(PixelIndex, 2048), PixelIndex / 2048.0, 0);
+    }
+
+// Procedure
+
+    void DetermineV(point MainPnt){
+        TriCoordIndex = TexCoord((MainPnt - BoundMin) / Dimensions * 128);
+        OX = int(TriCoordIndex[0]);
+        OY = int(TriCoordIndex[1]);
+
+        VInt[2] = LookUp(IMG5, OX, OY);
+        VFloat[2] = LookUp(IMG6, OX, OY);
+
+        VInt[1] = LookUp(IMG3, OX, OY);
+        VFloat[1] = LookUp(IMG4, OX, OY);
+
+        VInt[0] = LookUp(IMG1, OX, OY);
+        VFloat[0] = LookUp(IMG2, OX, OY);
+
+        VNorInt[2] = LookUpVN(IMG15, OX, OY);
+        VNorFloat[2] = LookUpVN(IMG16, OX, OY);
+
+        VNorInt[1] = LookUpVN(IMG13, OX, OY);
+        VNorFloat[1] = LookUpVN(IMG14, OX, OY);
+
+        VNorInt[0] = LookUpVN(IMG11, OX, OY);
+        VNorFloat[0] = LookUpVN(IMG12, OX, OY);
+
+        UVCol[0] = LookUp(IMG7, OX, OY);
+        UVCol[1] = LookUp(IMG8, OX, OY);
+        UVCol[2] = LookUp(IMG9, OX, OY);
+        UVCol[3] = LookUp(IMG0, OX, OY);
+
+        for (int i = 0; i <= 2; i++){
+            TriV[i] = TriCoord(VInt[i], VFloat[i]);
+            VNor[i] = TriNor(VNorInt[i], VNorFloat[i]);
+        }
+
+        UV[0] = TwoCoord(UVCol[0][0], UVCol[0][2], UVCol[0][1], UVCol[1][2]);
+        UV[1] = TwoCoord(UVCol[1][0], UVCol[2][2], UVCol[1][1], UVCol[3][2]);
+        UV[2] = TwoCoord(UVCol[2][0], UVCol[3][0], UVCol[2][1], UVCol[3][1]);
+
+        CurNor = CrossF(TriV);
+    }
+
+    void DetermineBelow(point MainPnt){
+        for (int i = 0; i <= 2; i++) 
+            BelowV[i] = TriV[i] + VNor[i] * dot(CurNor, MainPnt - TriV[2]) / dot(CurNor, VNor[i]);
+        Below2D = Parametric(MainPnt - BelowV[2], BelowV[0] - BelowV[2], BelowV[1] - BelowV[2]);
+    }
+
+    void CheckHood(point MainPnt){
+        int Ind;
+        for (int i = 0; i <= 11; i++){
+            Ind = mod(i, 3);
+            DetermineV(MainPnt + Block[Ind] * Artifact * (mod(i, 6) > 2 ? -1 : 1) * (i > 5 ? 1 : 2) * 
+                      (Ind == 0 ? point(1,0,0) : Ind == 1 ? point(0,1,0) : point(0,0,1))); 
+            DetermineBelow(MainPnt); 
+            if (!IsOutBelow()) break;
+        }   
+    }
+
+    void DetermineCoord(point MainPnt){
+        OldTriV = TriV;
+        OldUV = UV;
+        OldVNor = VNor;
+
+        DetermineV(MainPnt);
+        DetermineBelow(MainPnt);
+
+        if (IsOutBelow()){
+            if (IsDifferent()){
+                TriV = OldTriV;
+                UV = OldUV;
+                VNor = OldVNor;
+                CurNor = CrossF(TriV);
+                DetermineBelow(MainPnt);
+                if (IsOutBelow()) CheckHood(MainPnt);
+            } else CheckHood(MainPnt);
+        } 
+
+        CurUV = (UV[0] - UV[2]) * Below2D[0] + (UV[1] - UV[2]) * Below2D[1] + UV[2];
+        CurDepth = Depth + dot(CurNor, MainPnt - TriV[2]);
+        CurHeight = texture(HeightMap, CurUV[0], 1 - CurUV[1], "interp", "linear");
+	    CurHeight *= Strength;
+        Condition = CurDepth / Depth <= CurHeight ? 1 : 0;
+    }     
+    
+// Correct Incoming Vector
+
+    DetermineV(InitCenter);
+
+    InitTriV = TriV;
+    InitNor = CurNor;
+    TrueTriV[2] = TruePosition - DeriU * u - DeriV * v;
+    TrueTriV[1] = TrueTriV[2] + DeriV;
+    TrueTriV[0] = TrueTriV[2] + DeriU;
+    point Bary = TruePosition + Incoming - TrueNormal * Look;
+    Bary = Parametric(Bary - TrueTriV[2], TrueTriV[0] - TrueTriV[2], TrueTriV[1] - TrueTriV[2]);
+    LocalIncoming = normalize((TriV[0] - TriV[2]) * Bary[0] + (TriV[1] - TriV[2]) * Bary[1] + 
+                              TriV[2] + CurNor * Look - InitPosition) * -Step; 
+
+// Parallax
+
+    CurHeight = texture(HeightMap, UVMap[0], 1 - UVMap[1], "interp", "linear");
+    CurHeight *= Strength;
+    Alpha = Look > 0 ? 1 : 0;
+    if (CurHeight < 1 && Alpha == 1){
+
+    // Displacement
+
+        After = InitPosition;
+
+        int Steps = Look <= Threshold ? int(Radius * MaxSearch) : 
+                    int(((1 - MaxSearch) / (1 - Threshold) * Look + 
+                    (MaxSearch - Threshold) / (1 - Threshold)) * Radius);
+
+        for (int i = 1; i <= Steps; i++){
+            After += LocalIncoming;
+            DetermineCoord(After);
+
+            if (Condition || IsOut(After)) break;
+        }
+
+        if (!Condition || IsOut(After)){
+            Alpha = 0;
+        } else {
+            point Before = After - LocalIncoming;
+            point Current = After;
+            for (int i = 1; i <= Binary; i++){
+                if (Condition){
+                    After = Current;
+                    Current += (Before - Current) / 2;
+                } else {
+                    Before = Current;
+                    Current += (After- Current) / 2;
+                }
+                DetermineCoord(Current);
+            }
+            for (int i = 1; i <= 10 && !Condition; i++){
+                Before = Current;
+                Current += (After- Current) / 2;
+                DetermineCoord(Current);
+            }
+            Diffuse = texture(DiffuseMap, CurUV[0], 1 - CurUV[1], "interp", "linear");
+            Normal = texture(NormalMap, CurUV[0], 1 - CurUV[1], "interp", "linear");
+            PBR = texture(PBRMap, CurUV[0], 1 - CurUV[1], "interp", "linear");
+
+        // Self Shadow
+
+            Shadow = 0.5 / (length(Current - InitPosition) * 2 + 0.5); 
+
+            Bary = TruePosition + normalize(transform("object", Light) - TruePosition) - 
+                   TrueNormal * Look;
+            Bary = Parametric(Bary - TrueTriV[2], TrueTriV[0] - TrueTriV[2], 
+                              TrueTriV[1] - TrueTriV[2]);
+            point Outcoming = 
+                normalize((InitTriV[0] - InitTriV[2]) * Bary[0] + 
+                          (InitTriV[1] - InitTriV[2]) * Bary[1] + 
+                          InitTriV[2] + InitNor * Look - InitPosition) * ShadowStep; 
+
+            for (int i = 1; i <= ShadowRadius && !IsOut(Current); i++){  
+                Current += Outcoming;
+                DetermineCoord(Current);
+                
+                if (Condition){
+                    Shadow -= 0.5;
+                    break;
+                }
+            }     
+            Shadow = maprange(Shadow, -0.5, 1, 0, 1);   
+        }
+    }
+}

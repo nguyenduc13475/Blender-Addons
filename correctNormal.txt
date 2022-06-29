@@ -1,0 +1,7 @@
+shader CorrectNormal(
+    point TrueNormal = P,
+    float BackFace = 0,
+    output point CorrectTrueNormal = TrueNormal
+){
+    if (BackFace == 1) CorrectTrueNormal = -TrueNormal;
+}

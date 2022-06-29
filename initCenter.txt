@@ -1,0 +1,8 @@
+shader InitCenter(
+    point IntCenter = P,
+    point FloatCenter = P,
+    float MaxSize = 10,
+    output point InitCenter = P
+){
+    InitCenter = (IntCenter * 255 + FloatCenter * 255 / 74) / (37 / MaxSize) - MaxSize;
+}

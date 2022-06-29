@@ -1,0 +1,8 @@
+shader InitPosition(
+    point Vector = P,
+    point BoundingBox = point(0,0,0),
+    point Dimension = point(2,2,2),
+    output point InitPosition = P
+){
+    InitPosition = (Vector - point(0.5,0.5,0.5)) * Dimension + BoundingBox;
+}
